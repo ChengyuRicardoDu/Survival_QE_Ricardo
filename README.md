@@ -2,7 +2,6 @@
 
 Supplementary code, data, and generated figures for the BIOSTATS 748 survival analysis qualifying exam project.
 
-The analysis studies survival after discharge among simulated acute heart failure patients. The workflow moves from data cleaning and exploratory summaries to Kaplan-Meier analysis, Cox modeling, model diagnostics, alternative survival models, and gene-expression extensions.
 
 ## Contents
 
@@ -16,7 +15,6 @@ The analysis studies survival after discharge among simulated acute heart failur
 - `scripts/figure_survival_modeling.R`: script for the survival modeling composite figure.
 - `scripts/goodness_of_fit_checks.R`: script for functional-form, PH, residual, and model-fit checks.
 - `figures/`: generated report figures.
-- `tables/`: generated model summaries and validation outputs.
 
 ## Suggested Run Order
 
@@ -32,7 +30,4 @@ Run the files from the repository root:
 
 The checked-in `figures/` and `tables/` folders contain the generated outputs used to support the final report.
 
-## Notes
-
-The gene-expression analysis is exploratory and internally validated only. The selected genes should not be interpreted as externally validated biomarkers.
 
