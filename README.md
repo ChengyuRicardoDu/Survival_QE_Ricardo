@@ -28,6 +28,5 @@ Run the files from the repository root:
 6. `scripts/figure_survival_modeling.R`
 7. `scripts/goodness_of_fit_checks.R`
 
-The checked-in `figures/` and `tables/` folders contain the generated outputs used to support the final report.
 
 
