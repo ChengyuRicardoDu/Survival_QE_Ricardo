@@ -1,0 +1,215 @@
+---
+title: "Survival_QE"
+author: "Chengyu_Du"
+date: "2026-06-01"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(survival)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(gtsummary)
+library(patchwork)
+library(scales)
+```
+
+```{r}
+#Load Data
+dat <- read.csv("data/hf_survival-r.csv", check.names = FALSE)
+head(dat)
+```
+```{r}
+#Data Checking
+#str(dat)
+#colSums(is.na(dat))
+```
+
+
+
+```{r}
+#Data Cleaning and Exploration
+
+#Convert categorical variables to factors
+names(dat)[names(dat) == "Time (months)"] <- "time"
+
+dat$gender <- factor(
+  dat$gender,
+  levels = c("Female", "Male")
+)
+
+dat$smoking <- factor(
+  dat$smoking,
+  levels = c("Never", "Former", "Current")
+)
+
+dat$diabetes <- factor(
+  dat$diabetes,
+  levels = c(0, 1),
+  labels = c("No", "Yes")
+)
+
+dat$nyha_class <- factor(
+  dat$nyha_class, 
+  levels = c("I", "II", "III", "IV"), 
+  ordered = TRUE)
+```
+
+```{r}
+# Save cleaned  data
+dir.create("output", showWarnings = FALSE)
+saveRDS(dat, file = "output/dat_clean.rds")
+```
+
+
+
+```{r}
+dat$status_label <- factor(
+  dat$status,
+  levels = c(0, 1),
+  labels = c("Censored", "Death")
+)
+
+theme_set(
+  theme_classic(base_size = 9) +
+    theme(
+      axis.text = element_text(colour = "black"),
+      axis.line = element_line(linewidth = 0.35),
+      axis.ticks = element_line(linewidth = 0.35),
+      plot.title = element_text(face = "bold", size = 10),
+      plot.tag = element_text(face = "bold", size = 12),
+      legend.position = "bottom",
+      legend.title = element_blank(),
+      strip.background = element_blank()
+    )
+)
+```
+
+```{r}
+# A. Event status
+p_event <- ggplot(dat, aes(x = nyha_class, fill = status_label)) +
+  geom_bar(position = "fill", width = 0.65, colour = "white", linewidth = 0.25) +
+  scale_fill_manual(values = c("Censored" = "#D8DEE3", "Death" = "#D77A61")) +
+  scale_y_continuous(labels = percent_format()) +
+  labs(
+    tag = "A",
+    x = "NYHA class",
+    y = "Proportion",
+    title = "Event status by NYHA class"
+  )
+```
+
+
+```{r}
+# B. Categorical covariates
+p_gender <- ggplot(dat, aes(x = nyha_class, fill = gender)) +
+  geom_bar(position = "fill", width = 0.65, colour = "white", linewidth = 0.25) +
+  scale_fill_manual(values = c("Female" = "#D8DEE3", "Male" = "#6FA7B8")) +
+  scale_y_continuous(labels = percent_format()) +
+  labs(tag = "B", x = "NYHA class", y = "Proportion", title = "Gender")
+
+p_smoking <- ggplot(dat, aes(x = nyha_class, fill = smoking)) +
+  geom_bar(position = "fill", width = 0.65, colour = "white", linewidth = 0.25) +
+  scale_fill_manual(values = c("Never" = "#D8DEE3", "Former" = "#8DAA91", "Current" = "#D77A61")) +
+  scale_y_continuous(labels = percent_format()) +
+  labs(x = "NYHA class", y = "Proportion", title = "Smoking")
+
+p_diabetes <- ggplot(dat, aes(x = nyha_class, fill = diabetes)) +
+  geom_bar(position = "fill", width = 0.65, colour = "white", linewidth = 0.25) +
+  scale_fill_manual(values = c("No" = "#D8DEE3", "Yes" = "#D77A61")) +
+  scale_y_continuous(labels = percent_format()) +
+  labs(x = "NYHA class", y = "Proportion", title = "Diabetes")
+
+```
+
+```{r}
+# C. Continuous covariates
+p_age <- ggplot(dat, aes(x = nyha_class, y = age)) +
+  geom_boxplot(width = 0.55, fill = "#EAF1F2", colour = "black", outlier.alpha = 0.4) +
+  labs(tag = "C", x = "NYHA class", y = "Value", title = "Age")
+
+p_bmi <- ggplot(dat, aes(x = nyha_class, y = bmi)) +
+  geom_boxplot(width = 0.55, fill = "#EAF1F2", colour = "black", outlier.alpha = 0.4) +
+  labs(x = "NYHA class", y = "Value", title = "BMI")
+
+p_ef <- ggplot(dat, aes(x = nyha_class, y = ejection_fraction)) +
+  geom_boxplot(width = 0.55, fill = "#EAF1F2", colour = "black", outlier.alpha = 0.4) +
+  labs(x = "NYHA class", y = "Value", title = "Ejection fraction")
+
+p_sodium <- ggplot(dat, aes(x = nyha_class, y = sodium)) +
+  geom_boxplot(width = 0.55, fill = "#EAF1F2", colour = "black", outlier.alpha = 0.4) +
+  labs(x = "NYHA class", y = "Value", title = "Sodium")
+
+p_cont <- (p_age + p_bmi) / (p_ef + p_sodium)
+
+```
+
+
+```{r}
+# D. Creatinine before and after log transformation
+p_creatinine_raw <- ggplot(dat, aes(x = nyha_class, y = creatinine)) +
+  geom_boxplot(
+    width = 0.55,
+    fill = "#EAF1F2",
+    colour = "black",
+    outlier.alpha = 0.4
+  ) +
+  labs(
+    tag = "D",
+    x = "NYHA class",
+    y = "Value",
+    title = "Raw creatinine"
+  )
+
+p_creatinine_log <- ggplot(dat, aes(x = nyha_class, y = log(creatinine))) +
+  geom_boxplot(
+    width = 0.55,
+    fill = "#EAF1F2",
+    colour = "black",
+    outlier.alpha = 0.4
+  ) +
+  labs(
+    x = "NYHA class",
+    y = "Value",
+    title = "Log-transformed creatinine"
+  )
+
+p_creatinine <- p_creatinine_raw + p_creatinine_log
+```
+
+
+```{r}
+figure1 <- (p_event + p_gender + p_smoking + p_diabetes) /
+  p_cont /
+  p_creatinine +
+  plot_layout(
+    heights = c(1.55, 1.65, 1.05)
+  )
+
+figure1
+
+dir.create("figures", showWarnings = FALSE)
+
+ggsave(
+  "figures/figure1_exploratory.pdf",
+  figure1,
+  width = 8.2,
+  height = 8.8
+)
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+

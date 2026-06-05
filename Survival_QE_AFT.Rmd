@@ -1,0 +1,121 @@
+---
+title: "Survival_QE_AFT"
+author: "Chengyu_Du"
+date: "2026-06-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(survival)
+library(splines)
+```
+
+
+```{r}
+dat <- readRDS("output/dat_clean.rds")
+
+dat$nyha_nominal <- factor(
+  dat$nyha_class,
+  levels = c("I", "II", "III", "IV"),
+  ordered = FALSE
+)
+
+surv_obj <- Surv(
+  time = dat$time,
+  event = dat$status
+)
+```
+
+```{r}
+aft_weibull <- survreg(
+  surv_obj ~ nyha_nominal +
+    age + gender + bmi + smoking + diabetes +
+    ejection_fraction + ns(log(creatinine), df = 2) + sodium,
+  data = dat,
+  dist = "weibull"
+)
+
+summary(aft_weibull)
+```
+
+
+```{r}
+aft_exponential <- survreg(
+  surv_obj ~ nyha_nominal +
+    age + gender + bmi + smoking + diabetes +
+    ejection_fraction + ns(log(creatinine), df = 2) + sodium,
+  data = dat,
+  dist = "exponential"
+)
+
+summary(aft_exponential)
+```
+
+```{r}
+aft_lognormal <- survreg(
+  surv_obj ~ nyha_nominal +
+    age + gender + bmi + smoking + diabetes +
+    ejection_fraction + ns(log(creatinine), df = 2) + sodium,
+  data = dat,
+  dist = "lognormal"
+)
+
+summary(aft_lognormal)
+```
+
+```{r}
+aft_loglogistic <- survreg(
+  surv_obj ~ nyha_nominal +
+    age + gender + bmi + smoking + diabetes +
+    ejection_fraction + ns(log(creatinine), df = 2) + sodium,
+  data = dat,
+  dist = "loglogistic"
+)
+
+summary(aft_loglogistic)
+```
+```{r}
+aft_compare <- data.frame(
+  model = c("Weibull", "Exponential", "Log-normal", "Log-logistic"),
+  logLik = c(
+    as.numeric(logLik(aft_weibull)),
+    as.numeric(logLik(aft_exponential)),
+    as.numeric(logLik(aft_lognormal)),
+    as.numeric(logLik(aft_loglogistic))
+  ),
+  AIC = c(
+    AIC(aft_weibull),
+    AIC(aft_exponential),
+    AIC(aft_lognormal),
+    AIC(aft_loglogistic)
+  )
+)
+
+aft_compare
+```
+
+```{r}
+aft_final <- aft_lognormal
+
+summary(aft_final)
+```
+
+
+```{r}
+aft_coef <- summary(aft_final)$table
+
+aft_time_ratio <- data.frame(
+  coef = aft_coef[, "Value"],
+  se = aft_coef[, "Std. Error"],
+  z = aft_coef[, "z"],
+  p_value = aft_coef[, "p"]
+)
+
+aft_time_ratio$time_ratio <- exp(aft_time_ratio$coef)
+aft_time_ratio$lower_95 <- exp(aft_time_ratio$coef - 1.96 * aft_time_ratio$se)
+aft_time_ratio$upper_95 <- exp(aft_time_ratio$coef + 1.96 * aft_time_ratio$se)
+
+aft_time_ratio
+```
+

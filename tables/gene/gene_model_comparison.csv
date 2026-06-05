@@ -1,0 +1,5 @@
+"model","c_index","gain"
+"Clinical only",0.686603416193174,0
+"Clinical + ordinary PCA",0.689794575170835,0.00319115897766098
+"Clinical + supervised PCA",0.734101731032177,0.0474983148390031
+"Clinical + elastic net genes",0.832444440065921,0.145841023872746

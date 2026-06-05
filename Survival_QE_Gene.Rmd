@@ -1,0 +1,442 @@
+---
+title: "Survivial_QE_Gene"
+author: "Chengyu Du"
+date: "2026-06-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(survival)
+library(glmnet)
+library(splines)
+```
+
+
+```{r}
+dat <- readRDS("output/dat_clean.rds")
+
+dat$nyha_nominal <- factor(
+  dat$nyha_class,
+  levels = c("I", "II", "III", "IV"),
+  ordered = FALSE
+)
+
+gene_names <- grep("^GENE_", names(dat), value = TRUE)
+
+surv_obj <- Surv(time = dat$time, event = dat$status)
+```
+```{r}
+x_clinical <- model.matrix(
+  ~ nyha_nominal + age + gender + bmi + smoking + diabetes +
+    ejection_fraction + ns(log(creatinine), df = 2) + sodium,
+  data = dat
+)
+
+x_clinical <- x_clinical[, -1]
+```
+
+```{r}
+x_gene <- as.matrix(dat[, gene_names])
+x_all <- cbind(x_clinical, x_gene)
+
+penalty_gene <- c(
+  rep(0, ncol(x_clinical)),
+  rep(1, ncol(x_gene))
+)
+```
+
+```{r}
+set.seed(748)
+
+cv_gene <- cv.glmnet(
+  x = x_all,
+  y = surv_obj,
+  family = "cox",
+  alpha = 0.5,
+  penalty.factor = penalty_gene,
+  nfolds = 10
+)
+
+cv_gene
+plot(cv_gene)
+```
+
+```{r}
+gene_coef <- coef(cv_gene, s = "lambda.1se")
+
+selected_variables <- rownames(gene_coef)[as.numeric(gene_coef) != 0]
+selected_genes <- selected_variables[selected_variables %in% gene_names]
+
+selected_genes
+```
+
+```{r}
+set.seed(748)
+
+fold_id <- rep(NA, nrow(dat))
+
+fold_id[dat$status == 1] <- sample(
+  rep(1:10, length.out = sum(dat$status == 1))
+)
+
+fold_id[dat$status == 0] <- sample(
+  rep(1:10, length.out = sum(dat$status == 0))
+)
+
+
+c_index <- data.frame(
+  fold = 1:10,
+  clinical = NA,
+  clinical_gene = NA
+)
+
+for (k in 1:10) {
+  train <- fold_id != k
+  test <- fold_id == k
+  
+  cox_train <- coxph(
+    Surv(time, status) ~ nyha_nominal + age + gender + bmi +
+      smoking + diabetes + ejection_fraction + ns(log(creatinine), df = 2) + sodium,
+    data = dat[train, ]
+  )
+  
+  risk_clinical <- predict(
+    cox_train,
+    newdata = dat[test, ],
+    type = "lp"
+  )
+  
+  cv_train <- cv.glmnet(
+    x = x_all[train, ],
+    y = surv_obj[train],
+    family = "cox",
+    alpha = 0.5,
+    penalty.factor = penalty_gene,
+    nfolds = 5
+  )
+  
+  risk_gene <- predict(
+    cv_train,
+    newx = x_all[test, ],
+    s = "lambda.1se",
+    type = "link"
+  )
+  
+  c_index$clinical[k] <- concordance(
+    Surv(time, status) ~ risk_clinical,
+    data = dat[test, ],
+    reverse = TRUE
+  )$concordance
+  
+  c_index$clinical_gene[k] <- concordance(
+    Surv(time, status) ~ risk_gene,
+    data = dat[test, ],
+    reverse = TRUE
+  )$concordance
+}
+
+c_index$gain <- c_index$clinical_gene - c_index$clinical
+
+c_index
+colMeans(c_index[, c("clinical", "clinical_gene", "gain")])
+summary(c_index$gain)
+```
+
+```{r}
+mean(c_index$clinical)
+mean(c_index$clinical_gene)
+mean(c_index$gain)
+
+quantile(c_index$gain)
+
+set.seed(748)
+
+perm_result <- data.frame(
+  run = 1:20,
+  c_index = NA
+)
+
+
+for (b in 1:20) {
+  x_gene_perm <- x_gene[sample(nrow(x_gene)), ]
+  x_perm <- cbind(x_clinical, x_gene_perm)
+  
+  c_perm <- rep(NA, 10)
+  
+  for (k in 1:10) {
+    train <- fold_id != k
+    test <- fold_id == k
+    
+    cv_perm <- cv.glmnet(
+      x = x_perm[train, ],
+      y = surv_obj[train],
+      family = "cox",
+      alpha = 0.5,
+      penalty.factor = penalty_gene,
+      nfolds = 5
+    )
+    
+    risk_perm <- predict(
+      cv_perm,
+      newx = x_perm[test, ],
+      s = "lambda.1se",
+      type = "link"
+    )
+    
+    c_perm[k] <- concordance(
+      Surv(time, status) ~ risk_perm,
+      data = dat[test, ],
+      reverse = TRUE
+    )$concordance
+  }
+  
+  perm_result$c_index[b] <- mean(c_perm)
+}
+
+summary(perm_result$c_index)
+
+mean(c_index$clinical)
+mean(c_index$clinical_gene)
+
+mean(perm_result$c_index >= mean(c_index$clinical_gene))
+```
+
+```{r}
+# PCA Cox
+pca_gene <- prcomp(
+  x_gene,
+  center = TRUE,
+  scale. = TRUE
+)
+
+#summary(pca_gene)
+```
+
+```{r}
+pca_var <- pca_gene$sdev^2 / sum(pca_gene$sdev^2)
+
+plot(
+  cumsum(pca_var),
+  type = "b",
+  xlab = "Number of gene PCs",
+  ylab = "Cumulative variance explained"
+)
+```
+```{r}
+pca_c_index <- data.frame(
+  fold = 1:10,
+  clinical = c_index$clinical,
+  clinical_pca = NA
+)
+
+for (k in 1:10) {
+  train <- fold_id != k
+  test <- fold_id == k
+  
+  pca_train <- prcomp(
+    x_gene[train, ],
+    center = TRUE,
+    scale. = TRUE
+  )
+  
+  pc_train <- pca_train$x[, 1:5]
+  
+  x_test_scaled <- scale(
+    x_gene[test, ],
+    center = pca_train$center,
+    scale = pca_train$scale
+  )
+  
+  pc_test <- x_test_scaled %*% pca_train$rotation[, 1:5]
+  
+  colnames(pc_train) <- paste0("PC", 1:5)
+  colnames(pc_test) <- paste0("PC", 1:5)
+  
+  dat_train <- cbind(dat[train, ], pc_train)
+  dat_test <- cbind(dat[test, ], pc_test)
+  
+  cox_pca <- coxph(
+    Surv(time, status) ~ nyha_nominal + age + gender + bmi +
+      smoking + diabetes + ejection_fraction + ns(log(creatinine), df = 2) + sodium +
+      PC1 + PC2 + PC3 + PC4 + PC5,
+    data = dat_train
+  )
+  
+  risk_pca <- predict(
+    cox_pca,
+    newdata = dat_test,
+    type = "lp"
+  )
+  
+  pca_c_index$clinical_pca[k] <- concordance(
+    Surv(time, status) ~ risk_pca,
+    data = dat_test,
+    reverse = TRUE
+  )$concordance
+}
+```
+
+```{r}
+pca_c_index$gain <- pca_c_index$clinical_pca - pca_c_index$clinical
+
+pca_c_index
+colMeans(pca_c_index[, c("clinical", "clinical_pca", "gain")])
+summary(pca_c_index$gain)
+```
+
+```{r}
+spca_c_index <- data.frame(
+  fold = 1:10,
+  clinical = c_index$clinical,
+  clinical_spca = NA,
+  n_gene = NA
+)
+
+for (k in 1:10) {
+  train <- fold_id != k
+  test <- fold_id == k
+  
+  gene_screen <- data.frame(
+    gene = gene_names,
+    p_value = NA
+  )
+  
+  for (j in 1:length(gene_names)) {
+    form_j <- as.formula(
+      paste("Surv(time, status) ~", gene_names[j])
+    )
+    
+    gene_fit <- coxph(
+      form_j,
+      data = dat[train, ]
+    )
+    
+    gene_screen$p_value[j] <- summary(gene_fit)$coefficients[1, "Pr(>|z|)"]
+  }
+  
+  top_genes <- gene_screen$gene[order(gene_screen$p_value)][1:10]
+  
+  pca_train <- prcomp(
+    x_gene[train, top_genes],
+    center = TRUE,
+    scale. = TRUE
+  )
+  
+  pc_train <- pca_train$x[, 1:3]
+  
+  x_test_scaled <- scale(
+    x_gene[test, top_genes],
+    center = pca_train$center,
+    scale = pca_train$scale
+  )
+  
+  pc_test <- x_test_scaled %*% pca_train$rotation[, 1:3]
+  
+  colnames(pc_train) <- paste0("SPC", 1:3)
+  colnames(pc_test) <- paste0("SPC", 1:3)
+  
+  dat_train <- cbind(dat[train, ], pc_train)
+  dat_test <- cbind(dat[test, ], pc_test)
+  
+  cox_spca <- coxph(
+    Surv(time, status) ~ nyha_nominal + age + gender + bmi +
+      smoking + diabetes + ejection_fraction + ns(log(creatinine), df = 2) + sodium +
+      SPC1 + SPC2 + SPC3,
+    data = dat_train
+  )
+  
+  risk_spca <- predict(
+    cox_spca,
+    newdata = dat_test,
+    type = "lp"
+  )
+  
+  spca_c_index$clinical_spca[k] <- concordance(
+    Surv(time, status) ~ risk_spca,
+    data = dat_test,
+    reverse = TRUE
+  )$concordance
+  
+  spca_c_index$n_gene[k] <- length(top_genes)
+}
+```
+
+```{r}
+spca_c_index$gain <- spca_c_index$clinical_spca - spca_c_index$clinical
+
+spca_c_index
+colMeans(spca_c_index[, c("clinical", "clinical_spca", "gain")])
+summary(spca_c_index$gain)
+```
+```{r}
+gene_compare <- data.frame(
+  model = c(
+    "Clinical only",
+    "Clinical + ordinary PCA",
+    "Clinical + supervised PCA",
+    "Clinical + elastic net genes"
+  ),
+  c_index = c(
+    mean(c_index$clinical),
+    mean(pca_c_index$clinical_pca),
+    mean(spca_c_index$clinical_spca),
+    mean(c_index$clinical_gene)
+  )
+)
+
+gene_compare$gain <- gene_compare$c_index - gene_compare$c_index[1]
+
+gene_compare
+```
+
+```{r}
+dir.create("tables/gene", recursive = TRUE, showWarnings = FALSE)
+
+write.csv(
+  data.frame(gene = selected_genes),
+  "tables/gene/selected_genes.csv",
+  row.names = FALSE
+)
+
+write.csv(
+  c_index,
+  "tables/gene/elastic_net_fold_c_index.csv",
+  row.names = FALSE
+)
+
+write.csv(
+  pca_c_index,
+  "tables/gene/pca_fold_c_index.csv",
+  row.names = FALSE
+)
+
+write.csv(
+  spca_c_index,
+  "tables/gene/supervised_pca_fold_c_index.csv",
+  row.names = FALSE
+)
+
+write.csv(
+  perm_result,
+  "tables/gene/permutation_check.csv",
+  row.names = FALSE
+)
+
+write.csv(
+  gene_compare,
+  "tables/gene/gene_model_comparison.csv",
+  row.names = FALSE
+)
+
+write.csv(
+  data.frame(
+    pc = 1:length(pca_var),
+    variance = pca_var,
+    cumulative_variance = cumsum(pca_var)
+  ),
+  "tables/gene/pca_variance.csv",
+  row.names = FALSE
+)
+```
+

@@ -1,0 +1,14 @@
+.Rhistory
+.RData
+.Rproj.user/
+*.html
+*.log
+*.aux
+*.out
+*.synctex.gz
+*_cache/
+*_files/
+Rplots.pdf
+logs/
+_tmp_support_text/
+_skills/

@@ -1,0 +1,6 @@
+"model","AIC","df"
+"RP time-fixed",3114.43503348424,18
+"RP tvc df1",3103.29183144381,21
+"RP tvc df2",3108.63220513993,24
+"RP tvc df3",3114.4218462394,27
+"RP tvc df1 + selected genes",2649.5733891579,25

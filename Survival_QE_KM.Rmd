@@ -1,0 +1,136 @@
+---
+title: "Survival_QE_KM"
+author: "Chengyu_Du"
+date: "2026-06-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(survival)
+library(ggplot2)
+library(survminer)
+library(patchwork)
+```
+
+```{r}
+# Load Processed Data
+dat <- readRDS("output/dat_clean.rds")
+```
+
+```{r}
+surv_obj <- Surv(time = dat$time, event = dat$status)
+head(surv_obj)
+```
+```{r}
+km1 <- survfit(surv_obj ~ 1, data = dat)
+km1
+#summary(km1)
+```
+```{r}
+km2 <- survfit(surv_obj ~ nyha_class, data = dat)
+km2
+```
+```{r}
+lr_test <- survdiff(Surv(time, status) ~ nyha_class, data = dat)
+p_logrank <- 1 - pchisq(
+  lr_test$chisq,
+  df = length(lr_test$n) - 1
+)
+
+p_logrank
+```
+```{r, fig.width=11.5, fig.height=6.2, message=FALSE}
+cols_nyha <- c("#4C78A8", "#72A87E", "#E3A35C", "#C75B5B")
+
+km_overall <- ggsurvplot(
+  km1,
+  data = dat,
+  conf.int = FALSE,
+  censor = TRUE,
+  censor.size = 1.8,
+  risk.table = TRUE,
+  risk.table.title = "Number at risk",
+  risk.table.y.text = FALSE,
+  xlab = "Time (months)",
+  ylab = "Survival probability",
+  xlim = c(0, 72),
+  break.time.by = 12,
+  palette = "black",
+  ggtheme = theme_classic(base_size = 11)
+)
+
+km_nyha <- ggsurvplot(
+  km2,
+  data = dat,
+  conf.int = FALSE,
+  censor = TRUE,
+  censor.size = 1.8,
+  risk.table = TRUE,
+  risk.table.title = "Number at risk",
+  risk.table.y.text.col = TRUE,
+  pval = TRUE,
+  pval.method = TRUE,
+  pval.coord = c(36, 0.92),
+  pval.method.coord = c(36, 0.86),
+  palette = cols_nyha,
+  legend.title = "NYHA class",
+  legend.labs = c("I", "II", "III", "IV"),
+  xlab = "Time (months)",
+  ylab = "Survival probability",
+  xlim = c(0, 72),
+  break.time.by = 12,
+  ggtheme = theme_classic(base_size = 11)
+)
+
+km_overall$plot <- km_overall$plot +
+  ggtitle("Overall survival") +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0),
+    legend.position = "none"
+  )
+
+km_nyha$plot <- km_nyha$plot +
+  ggtitle("Survival by NYHA class") +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0),
+    legend.position = "right"
+  )
+
+km_overall$table <- km_overall$table +
+  theme_classic(base_size = 9) +
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank()
+  )
+
+km_nyha$table <- km_nyha$table +
+  theme_classic(base_size = 9) +
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank()
+  )
+
+left_panel <- (km_overall$plot / km_overall$table) +
+  plot_layout(heights = c(3, 1))
+
+right_panel <- (km_nyha$plot / km_nyha$table) +
+  plot_layout(heights = c(3, 1))
+
+fig_km <- (left_panel | right_panel) +
+  plot_layout(widths = c(0.9, 1.2))
+
+fig_km
+
+dir.create("figures", showWarnings = FALSE)
+
+ggsave(
+  "figures/figure2_km.pdf",
+  fig_km,
+  width = 11.5,
+  height = 6.2
+)
+
+```
